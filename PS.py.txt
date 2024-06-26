@@ -1,0 +1,66 @@
+import arcpy
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from geopandas import GeoDataFrame
+from shapely.geometry import Point, LineString, Polygon
+from sklearn.neighbors import NearestNeighbors
+from networkx import Graph, shortest_path, dijkstra_path
+
+# Load data from shapefiles or APIs
+indonesia_boundaries = arcpy.FeatureClassToFeatureClass_conversion(
+    "https://gisdata.id/id/download/batas-administrasi-indonesia",
+    "temp/indonesia_boundaries.shp"
+)
+roads = arcpy.FeatureClassToFeatureClass_conversion(
+    "https://gisdata.id/id/download/jaringan-jalan-indonesia",
+    "temp/roads.shp"
+)
+elevation = arcpy.RasterToFloatRaster("https://gisdata.id/id/download/dem-indonesia",
+                                    "temp/elevation.tif")
+disaster_data = pd.read_csv("disaster_data.csv")  # Real-time data from API or database
+
+# Convert to GeoDataFrames
+indonesia_df = GeoDataFrame(
+    geometry=[Point(x, y) for x, y in zip(indonesia_boundaries.X, indonesia_boundaries.Y)],
+    crs=indonesia_boundaries.crs
+)
+roads_df = GeoDataFrame(
+    geometry=[LineString(points) for points in roads.shape],
+    crs=roads.crs
+)
+elevation_df = GeoDataFrame(geometry=[Point(x, y) for x, y in zip(elevation.extent.xmin, elevation.extent.ymin)], crs=elevation.crs)
+elevation_array = elevation.read()
+
+def calculate_route(user_location, disaster_location):
+    # Convert user and disaster locations to GeoPoints
+    user_point = Point(user_location[0], user_location[1])
+    disaster_point = Point(disaster_location[0], disaster_location[1])
+
+    # Create a graph from the road network
+    G = Graph()
+    for _, row in roads_df.iterrows():
+        node1 = row["NODE_ID"]
+        node2 = row["NODE_ID2"]
+        length = row["LENGTH"]
+        G.add_edge(node1, node2, weight=length)
+
+    # Calculate elevation profile along the shortest path
+    shortest_path = dijkstra_path(G, user_point, disaster_point)
+    elevation_profile = []
+    for node in shortest_path:
+        node_x, node_y = node
+        elevation_value = elevation_array[elevation_df.index[elevation_df["geometry"].apply(lambda g: g.contains(Point(node_x, node_y))).iloc[0]].item()]
+        elevation_profile.append(elevation_value)
+
+    # Return route information
+    return shortest_path, elevation_profile
+
+# Create a user interface using Tkinter, PyQt, or other GUI libraries
+# Display the map, user location, disaster location, and route information
+# Allow users to search for locations and plan evacuation routes
+# Send notifications based on real-time disaster data
+
+# Package the application as a desktop application using tools like PyInstaller
+# Deploy the application to a website or app store
+# Provide documentation and support for users
